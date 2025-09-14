@@ -12,6 +12,7 @@ struct ProfileViewLogged: View {
     
     @Binding var isLoggedIn: Bool
     @StateObject private var authService = AuthService()
+    @Environment(\.modelContext) private var modelContext
     
     // Image picker states
     @State private var selectedItem: PhotosPickerItem?
@@ -21,6 +22,12 @@ struct ProfileViewLogged: View {
     @State private var selectedType = "Bondiano"
     @State private var isEditingName = false
     @State private var editedName = ""
+    @State private var isPublicProfile = true
+    
+    // Error handling states
+    @State private var showErrorAlert = false
+    @State private var errorMessage = ""
+    @State private var isUpdating = false
     
     private let typeOptions = ["Bondiano", "Boatardiano", "Mentoria"]
     
@@ -41,10 +48,13 @@ struct ProfileViewLogged: View {
                 }
                 .onChange(of: selectedItem) { _, newItem in
                     guard let newItem = newItem else { return }
+                    print("ProfileViewLogged: Image selected, updating profile image")
                     Task {
                         if let data = try? await newItem.loadTransferable(type: Data.self),
                            let uiImage = UIImage(data: data) {
                             selectedImage = Image(uiImage: uiImage)
+                            // Save image to database
+                            authService.updateProfileImage(data)
                         }
                     }
                 }
@@ -66,10 +76,13 @@ struct ProfileViewLogged: View {
                 }
                 .onChange(of: selectedItem) { _, newItem in
                     guard let newItem = newItem else { return }
+                    print("ProfileViewLogged: Image selected, updating profile image")
                     Task {
                         if let data = try? await newItem.loadTransferable(type: Data.self),
                            let uiImage = UIImage(data: data) {
                             selectedImage = Image(uiImage: uiImage)
+                            // Save image to database
+                            authService.updateProfileImage(data)
                         }
                     }
                 }
@@ -88,9 +101,6 @@ struct ProfileViewLogged: View {
             VStack(spacing: 0) {
                 // Type picker section
                 HStack(spacing: 16) {
-                    Image(systemName: "person.3.fill")
-                        .foregroundColor(.blue)
-                        .frame(width: 20, height: 20)
                     
                     Text("Tipo de Perfil")
                         .font(.body)
@@ -104,6 +114,36 @@ struct ProfileViewLogged: View {
                         }
                     }
                     .pickerStyle(MenuPickerStyle())
+                    .disabled(authService.isUpdating)
+                    .onChange(of: selectedType) { _, newType in
+                        print("ProfileViewLogged: Profile type changed to \(newType)")
+                        // Save profile type to database
+                        authService.updateProfileType(newType)
+                    }
+                }
+                .padding(.horizontal, 20)
+                .padding(.vertical, 16)
+                
+                Divider()
+                
+                // Public visibility toggle
+                HStack(spacing: 16) {
+                    Image(systemName: "eye")
+                        .foregroundColor(.blue)
+                        .frame(width: 20, height: 20)
+                    
+                    Text("Perfil Público")
+                        .foregroundColor(.primary)
+                        .font(.body)
+                    
+                    Spacer()
+                    
+                    Toggle("", isOn: $isPublicProfile)
+                        .disabled(authService.isUpdating)
+                        .onChange(of: isPublicProfile) { _, newValue in
+                            print("ProfileViewLogged: Public visibility changed to \(newValue)")
+                            authService.updatePublicVisibility(newValue)
+                        }
                 }
                 .padding(.horizontal, 20)
                 .padding(.vertical, 16)
@@ -115,6 +155,7 @@ struct ProfileViewLogged: View {
                     iconColor: .orange,
                     title: "Alterar Nome"
                 ) {
+                    print("ProfileViewLogged: Opening name edit dialog")
                     editedName = authService.userName ?? "Vicente Parmigiani"
                     isEditingName = true
                 }
@@ -125,8 +166,21 @@ struct ProfileViewLogged: View {
             
             Spacer()
             
+            // Sync status indicator
+            if authService.isUpdating {
+                HStack {
+                    ProgressView()
+                        .scaleEffect(0.8)
+                    Text("Sincronizando...")
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                }
+                .padding(.bottom, 16)
+            }
+            
             // Logout button
             Button(action: {
+                print("ProfileViewLogged: User logging out")
                 // Log out action using AuthService
                 authService.logout()
                 isLoggedIn = false
@@ -141,17 +195,46 @@ struct ProfileViewLogged: View {
                             .foregroundColor(.red)
                     )
             }
+            .disabled(authService.isUpdating)
         }
         .padding(.horizontal, 24)
+        .onAppear {
+            print("ProfileViewLogged: View appeared, loading profile data")
+            // Configure AuthService with model context
+            authService.setModelContext(modelContext)
+            
+            // Load profile data
+            if let profile = authService.currentUserProfile {
+                selectedType = profile.profileType ?? "Bondiano"
+                isPublicProfile = profile.isPublic ?? true
+                if let imageData = profile.profileImageData,
+                   let uiImage = UIImage(data: imageData) {
+                    selectedImage = Image(uiImage: uiImage)
+                }
+            }
+        }
+        .onChange(of: authService.lastError) { _, error in
+            if let error = error {
+                errorMessage = error
+                showErrorAlert = true
+                authService.lastError = nil // Reset error after showing
+            }
+        }
         .alert("Alterar Nome", isPresented: $isEditingName) {
             TextField("Nome", text: $editedName)
             Button("Cancelar", role: .cancel) { }
             Button("Salvar") {
-                // Aqui você pode salvar o nome usando o AuthService
-                // authService.updateUserName(editedName)
+                print("ProfileViewLogged: Saving new name: \(editedName)")
+                // Save the name using AuthService
+                authService.updateUserName(editedName)
             }
         } message: {
             Text("Digite seu novo nome:")
+        }
+        .alert("Erro", isPresented: $showErrorAlert) {
+            Button("OK", role: .cancel) { }
+        } message: {
+            Text(errorMessage)
         }
     }
 }
