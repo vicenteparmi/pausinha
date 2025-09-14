@@ -25,56 +25,43 @@ struct CommunityView: View {
     
     var body: some View {
         NavigationView {
-            VStack {
-                // Category filter
-                ScrollView(.horizontal, showsIndicators: false) {
-                    HStack(spacing: 12) {
-                        CategoryChip(
-                            title: "Todos",
-                            isSelected: selectedCategory == "Todos"
-                        ) {
-                            selectedCategory = "Todos"
-                        }
-                        
+            List {
+                Section(header:
+                    Picker("Categoria", selection: $selectedCategory) {
+                        Text("Todos").tag("Todos")
                         ForEach(categories, id: \.self) { category in
-                            CategoryChip(
-                                title: category.rawValue,
-                                isSelected: selectedCategory == category.rawValue
-                            ) {
-                                selectedCategory = category.rawValue
-                            }
+                            Text(category.rawValue).tag(category.rawValue)
                         }
                     }
-                    .padding(.horizontal, 20)
-                }
-                .padding(.vertical, 8)
-                
-                // Profiles list
-                if filteredProfiles.isEmpty {
-                    VStack(spacing: 16) {
-                        Image(systemName: "person.3")
-                            .font(.system(size: 60))
-                            .foregroundColor(.gray)
-                        
-                        Text("Nenhum usuário encontrado")
-                            .font(.title2)
-                            .fontWeight(.medium)
-                        
-                        Text("Seja o primeiro a tornar seu perfil público!")
-                            .font(.body)
-                            .foregroundColor(.secondary)
-                            .multilineTextAlignment(.center)
+                    .pickerStyle(SegmentedPickerStyle())
+                ) {
+                    if filteredProfiles.isEmpty {
+                        VStack(spacing: 16) {
+                            Image(systemName: "person.3")
+                                .font(.system(size: 60))
+                                .foregroundColor(.gray)
+                            
+                            Text("Nenhum usuário encontrado")
+                                .font(.title2)
+                                .multilineTextAlignment(.center)
+                                .fontWeight(.medium)
+                            
+                            Text("Seja o primeiro a tornar seu perfil público!")
+                                .font(.body)
+                                .foregroundColor(.secondary)
+                                .multilineTextAlignment(.center)
+                        }
+                        .padding(24)
+                        .frame(maxWidth: .infinity, alignment: .center)
+                    } else {
+                        ForEach(filteredProfiles, id: \.userID) { profile in
+                            PublicProfileRow(profile: profile)
+                        }
                     }
-                    .padding(40)
-                    
-                    Spacer()
-                } else {
-                    List(filteredProfiles, id: \.userID) { profile in
-                        PublicProfileRow(profile: profile)
-                    }
-                    .listStyle(PlainListStyle())
                 }
             }
+            .listStyle(PlainListStyle())
+            .navigationBarTitleDisplayMode(.automatic)
             .navigationTitle("Comunidade")
             .onAppear {
                 authService.setModelContext(modelContext)
@@ -88,29 +75,6 @@ struct CommunityView: View {
     
     private func loadData() {
         publicProfiles = authService.fetchAllPublicProfiles()
-        // categories are now static enum cases, no need to fetch
-    }
-}
-
-// MARK: - Category Chip Component
-struct CategoryChip: View {
-    let title: String
-    let isSelected: Bool
-    let action: () -> Void
-    
-    var body: some View {
-        Button(action: action) {
-            Text(title)
-                .font(.callout)
-                .fontWeight(.medium)
-                .padding(.horizontal, 16)
-                .padding(.vertical, 8)
-                .background(
-                    Capsule()
-                        .fill(isSelected ? Color.accentColor : Color.gray.opacity(0.2))
-                )
-                .foregroundColor(isSelected ? .white : .primary)
-        }
     }
 }
 

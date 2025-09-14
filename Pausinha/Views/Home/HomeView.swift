@@ -12,10 +12,11 @@ struct HomeView: View {
     // Navigation
     @State private var isNavigating = false
     @State private var isPresentingProfileView = false
+    @State private var isNavigatingCommunity = false
     
     // User authentication state
     @AppStorage("isLoggedIn") var isLoggedIn: Bool = false
-    
+
     var body: some View {
         NavigationStack {
             ScrollView {
@@ -42,6 +43,9 @@ struct HomeView: View {
                         Spacer()
                     }
                     
+                    // Community card
+                    CommunityCardView(isNavigatingCommunity: $isNavigatingCommunity)
+                
                 }.padding(.horizontal, 24)
             }
             .toolbar {
@@ -78,6 +82,9 @@ struct HomeView: View {
                 }
             }
             )
+            .navigationDestination(isPresented: $isNavigatingCommunity) {
+                CommunityView()
+            }
         }
     }
 }
