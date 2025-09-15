@@ -8,31 +8,28 @@
 import SwiftUI
 
 struct HomeView: View {
+    enum Destination: Hashable {
+        case profile
+        case community
+        case settings
+    }
     
-    // Navigation
-    @State private var isNavigating = false
-    @State private var isPresentingProfileView = false
-    
+    // Navigation path
+    @State private var path: [Destination] = []
+    // CreateNew sheet state
+    @State private var isPresentingCreateNew = false
     // User authentication state
     @AppStorage("isLoggedIn") var isLoggedIn: Bool = false
-    
+
     var body: some View {
-        NavigationStack {
+        NavigationStack(path: $path) {
             ScrollView {
                 VStack(spacing: 20) {
                     
                     // Header section
-                    VStack(spacing: 10) {
-                        Image("main_icon")
-                            .resizable()
-                            .scaledToFit()
-                            .frame(width: 220, height: 220)
-                        
-                        Text("Iniciar pausinha")
-                            .font(.caption)
-                            .foregroundColor(.gray)
-                        
-                    }.padding(.vertical, 24)
+                    CreateNewButton(action: {
+                        isPresentingCreateNew = true
+                    })
                     
                     // Ongoing title
                     HStack {
@@ -42,13 +39,43 @@ struct HomeView: View {
                         Spacer()
                     }
                     
+                    // Empty state view
+                    EmptyPausinhasView()
+                    
+                    // Upcoming title
+                    HStack {
+                        Text("Próximas")
+                            .font(.title2)
+                            .bold()
+                        Spacer()
+                    }
+                    
+                    // Empty state view
+                    EmptyPausinhasView()
+                    
+                    // Completed title
+                    HStack {
+                        Text("Concluídas")
+                            .font(.title2)
+                            .bold()
+                        Spacer()
+                    }
+                    
+                    // Empty state view
+                    EmptyPausinhasView()
+                    
+                    Spacer().frame(height: 32)
+                    
+                    // Community card
+                    CommunityCardView(onTap: { path.append(.community) })
+                
                 }.padding(.horizontal, 24)
             }
             .toolbar {
                 // Settings button
                 ToolbarItem(placement: .navigationBarLeading) {
                     Button(action: {
-                        // Action for menu button
+                        path.append(.settings)
                     }) {
                         Image(systemName: "gear")
                             .imageScale(.large)
@@ -58,11 +85,7 @@ struct HomeView: View {
                 
                 // Profile button
                 ToolbarItem(placement: .navigationBarTrailing) {
-                    Button(action: {
-                        // Navigation to ProfileView
-                        isNavigating = true
-                        isPresentingProfileView = true
-                    }) {
+                    Button(action: { path.append(.profile) }) {
                         Image(systemName: "person.crop.circle")
                             .imageScale(.large)
                             .foregroundColor(.black)
@@ -71,13 +94,21 @@ struct HomeView: View {
             }
             .navigationTitle("Pausinha?")
             .navigationBarTitleDisplayMode(.inline)
-            .navigationDestination(isPresented: $isNavigating, destination:
-                                    {
-                if isPresentingProfileView {
+            .navigationDestination(for: Destination.self) { destination in
+                switch destination {
+                case .profile:
                     ProfileView(isLoggedIn: $isLoggedIn)
+                case .community:
+                    CommunityView()
+                case .settings:
+                    SettingsView()
                 }
             }
-            )
+            .interactiveDismissDisabled(true)
+            .sheet(isPresented: $isPresentingCreateNew) {
+                CreateNewPausinhaView()
+            }
+            
         }
     }
 }
