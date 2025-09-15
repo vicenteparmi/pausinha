@@ -8,9 +8,8 @@
 import SwiftUI
 
 public struct CommunityCardView: View {
-    
-    @Binding var isNavigatingCommunity: Bool
-    
+    public var onTap: () -> Void
+
     public var body: some View {
         // Community section
         VStack(alignment: .leading, spacing: 12) {
@@ -24,9 +23,7 @@ public struct CommunityCardView: View {
             }
             .padding(12)
             
-            Button(action: {
-                isNavigatingCommunity = true
-            }) {
+            Button(action: onTap) {
                 Text("Ver todos")
                     .font(.headline)
                     .foregroundColor(.white)
@@ -49,6 +46,6 @@ public struct CommunityCardView: View {
 }
 
 #Preview {
-    CommunityCardView(isNavigatingCommunity: .constant(false))
+    CommunityCardView(onTap: {})
         .padding()
 }
