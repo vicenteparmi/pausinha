@@ -15,6 +15,7 @@ final class PublicProfile {
     var userID: String?
     var displayName: String?
     var profileType: String?
+    var institutionID: String?
     var profileImageData: Data?
     var isActive: Bool?
     var lastSeen: Date?
@@ -40,6 +41,7 @@ final class PublicProfile {
         record.setValue(self.userID, forKey: "userID")
         record.setValue(self.displayName, forKey: "displayName")
         record.setValue(self.profileType, forKey: "profileType")
+        record.setValue(self.institutionID, forKey: "institutionID")
         record.setValue(self.profileImageData, forKey: "profileImageData")
         record.setValue(self.isActive, forKey: "isActive")
         record.setValue(self.lastSeen, forKey: "lastSeen")
@@ -64,6 +66,7 @@ final class PublicProfile {
         self.userID = record["userID"] as? String
         self.displayName = record["displayName"] as? String
         self.profileType = record["profileType"] as? String
+        self.institutionID = record["institutionID"] as? String
         self.profileImageData = record["profileImageData"] as? Data
         self.isActive = record["isActive"] as? Bool
         self.lastSeen = record["lastSeen"] as? Date
@@ -71,7 +74,7 @@ final class PublicProfile {
         self.recordID = record.recordID.recordName
     }
     
-    func updatePublicProfile(name: String? = nil, type: String? = nil, imageData: Data? = nil) {
+    func updatePublicProfile(name: String? = nil, type: String? = nil, institutionID: String? = nil, imageData: Data? = nil) {
         print("PublicProfile: Updating public profile - name: \(name ?? "unchanged"), type: \(type ?? "unchanged"), image: \(imageData != nil ? "updated" : "unchanged")")
         if let name = name {
             self.displayName = name
@@ -79,9 +82,19 @@ final class PublicProfile {
         if let type = type {
             self.profileType = type
         }
+        // update institutionID only if it's explicitly passed as a non-nil value or if we want to support clearing it.
+        // Actually, to clear it we might need a separate function. We'll add one.
+        if let institutionID = institutionID {
+            self.institutionID = institutionID
+        }
         if let imageData = imageData {
             self.profileImageData = imageData
         }
+        self.lastSeen = Date()
+    }
+    
+    func clearInstitutionID() {
+        self.institutionID = nil
         self.lastSeen = Date()
     }
     

@@ -8,7 +8,7 @@
 import SwiftUI
 
 public struct ProfileViewEmpty: View {
-    @StateObject private var authService = AuthService()
+    @EnvironmentObject var authService: AuthService
     @State private var authMessage: String?
     
     @Binding var isLoggedIn: Bool
@@ -69,4 +69,5 @@ public struct ProfileViewEmpty: View {
 
 #Preview {
     ProfileViewEmpty(isLoggedIn: .constant(false))
+        .environmentObject(AuthService())
 }

@@ -15,6 +15,8 @@ struct PausinhaApp: App {
             Item.self,
             UserProfile.self,
             PublicProfile.self,
+            PausinhaGroup.self,
+            Institution.self,
         ])
         
         do {
@@ -23,7 +25,8 @@ struct PausinhaApp: App {
             // Try without CloudKit first to isolate the issue
             let modelConfiguration = ModelConfiguration(
                 schema: schema,
-                isStoredInMemoryOnly: false
+                isStoredInMemoryOnly: false,
+                cloudKitDatabase: .none
             )
             
             let container = try ModelContainer(for: schema, configurations: [modelConfiguration])
@@ -35,7 +38,8 @@ struct PausinhaApp: App {
             // Fallback to in-memory storage
             let fallbackConfiguration = ModelConfiguration(
                 schema: schema,
-                isStoredInMemoryOnly: true
+                isStoredInMemoryOnly: true,
+                cloudKitDatabase: .none
             )
             do {
                 return try ModelContainer(for: schema, configurations: [fallbackConfiguration])
@@ -59,7 +63,8 @@ struct PausinhaApp: App {
                 print("PausinhaApp: 🔄 Attempting fallback to in-memory storage")
                 let fallbackConfiguration = ModelConfiguration(
                     schema: schema,
-                    isStoredInMemoryOnly: true
+                    isStoredInMemoryOnly: true,
+                    cloudKitDatabase: .none
                 )
                 
                 let container = try ModelContainer(for: schema, configurations: [fallbackConfiguration])
@@ -72,10 +77,18 @@ struct PausinhaApp: App {
         }
     }()
 
+    /// Serviço de pausinhas (banco público CloudKit).
+    @State private var pausinhaService = PausinhaService()
+    
+    /// Serviço de autenticação
+    @StateObject private var authService = AuthService()
+
     var body: some Scene {
         WindowGroup {
             ContentView()
                 .preferredColorScheme(.light)
+                .environment(pausinhaService)
+                .environmentObject(authService)
         }
         .modelContainer(sharedModelContainer)
     }

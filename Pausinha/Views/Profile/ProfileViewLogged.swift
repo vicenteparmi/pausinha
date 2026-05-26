@@ -11,7 +11,7 @@ import PhotosUI
 struct ProfileViewLogged: View {
     
     @Binding var isLoggedIn: Bool
-    @StateObject private var authService = AuthService()
+    @EnvironmentObject var authService: AuthService
     @Environment(\.modelContext) private var modelContext
     
     // Image picker states
@@ -200,8 +200,6 @@ struct ProfileViewLogged: View {
         .padding(.horizontal, 24)
         .onAppear {
             print("ProfileViewLogged: View appeared, loading profile data")
-            // Configure AuthService with model context
-            authService.setModelContext(modelContext)
             
             // Load profile data
             if let profile = authService.currentUserProfile {
@@ -282,6 +280,7 @@ struct OptionRow: View {
 
 #Preview {
     ProfileViewLogged(
-        isLoggedIn: .constant(true),
+        isLoggedIn: .constant(true)
     )
+    .environmentObject(AuthService())
 }

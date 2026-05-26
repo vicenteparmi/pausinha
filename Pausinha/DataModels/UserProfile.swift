@@ -19,13 +19,15 @@ final class UserProfile {
     var createdAt: Date?
     var updatedAt: Date?
     var recordID: String? // CloudKit record ID
+    var institutionID: String?
     
-    init(userID: String, userName: String, profileType: String = "Bondiano", profileImageData: Data? = nil, isPublic: Bool = true) {
+    init(userID: String, userName: String, profileType: String = "Bondiano", profileImageData: Data? = nil, isPublic: Bool = true, institutionID: String? = nil) {
         self.userID = userID
         self.userName = userName
         self.profileType = profileType
         self.profileImageData = profileImageData
         self.isPublic = isPublic
+        self.institutionID = institutionID
         self.createdAt = Date()
         self.updatedAt = Date()
     }
@@ -40,6 +42,7 @@ final class UserProfile {
         record.setValue(self.profileType, forKey: "profileType")
         record.setValue(self.profileImageData, forKey: "profileImageData")
         record.setValue(self.isPublic, forKey: "isPublic")
+        record.setValue(self.institutionID, forKey: "institutionID")
         record.setValue(self.createdAt, forKey: "createdAt")
         record.setValue(self.updatedAt, forKey: "updatedAt")
         
@@ -63,13 +66,14 @@ final class UserProfile {
         self.profileType = record["profileType"] as? String
         self.profileImageData = record["profileImageData"] as? Data
         self.isPublic = record["isPublic"] as? Bool
+        self.institutionID = record["institutionID"] as? String
         self.createdAt = record["createdAt"] as? Date
         self.updatedAt = record["updatedAt"] as? Date
         self.recordID = record.recordID.recordName
     }
     
-    func updateProfile(name: String? = nil, type: String? = nil, imageData: Data? = nil, isPublic: Bool? = nil) {
-        print("UserProfile: Updating profile - name: \(name ?? "unchanged"), type: \(type ?? "unchanged"), image: \(imageData != nil ? "updated" : "unchanged"), public: \(isPublic.map { String($0) } ?? "unchanged")")
+    func updateProfile(name: String? = nil, type: String? = nil, imageData: Data? = nil, isPublic: Bool? = nil, institutionID: String? = nil) {
+        print("UserProfile: Updating profile - name: \(name ?? "unchanged"), type: \(type ?? "unchanged"), image: \(imageData != nil ? "updated" : "unchanged"), public: \(isPublic.map { String($0) } ?? "unchanged"), institutionID: \(institutionID ?? "unchanged")")
         if let name = name {
             self.userName = name
         }
@@ -82,6 +86,15 @@ final class UserProfile {
         if let isPublic = isPublic {
             self.isPublic = isPublic
         }
+        if let institutionID = institutionID {
+            self.institutionID = institutionID
+        }
+        self.updatedAt = Date()
+    }
+    
+    func clearInstitutionID() {
+        print("UserProfile: Clearing institutionID")
+        self.institutionID = nil
         self.updatedAt = Date()
     }
 }

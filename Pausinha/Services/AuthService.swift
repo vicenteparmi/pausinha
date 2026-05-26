@@ -18,6 +18,9 @@ class AuthService: NSObject, ObservableObject, ASAuthorizationControllerDelegate
     @Published var currentPublicProfile: PublicProfile?
     @Published var isUpdating = false
     @Published var lastError: String?
+    @Published var isProfileLoaded = false
+    @Published var showReauthAlert = false
+    @Published var reauthErrorMessage = ""
     private var completion: ((Result<ASAuthorizationAppleIDCredential, Error>) -> Void)?
     private var modelContext: ModelContext?
     private let cloudKitService = CloudKitService()
@@ -39,10 +42,41 @@ class AuthService: NSObject, ObservableObject, ASAuthorizationControllerDelegate
         }
     }
     
+    // Centralized CloudKit error handler for authentication/token failures
+    func handleCloudKitError(_ error: Error) {
+        let errorString = error.localizedDescription
+        var isAuthError = false
+        
+        if let ckError = error as? CKError {
+            if ckError.code == .notAuthenticated {
+                isAuthError = true
+            }
+        }
+        
+        if errorString.contains("auth token") || 
+           errorString.contains("auth_token") || 
+           errorString.contains("Account temporarily unavailable") ||
+           errorString.contains("bad or missing auth token") ||
+           errorString.contains("not authenticated") {
+            isAuthError = true
+        }
+        
+        if isAuthError {
+            DispatchQueue.main.async {
+                self.reauthErrorMessage = "Sua sessão do iCloud expirou ou o token é inválido. Deseja verificar os Ajustes do aparelho ou refazer o login?"
+                self.showReauthAlert = true
+            }
+        }
+    }
+    
     // Load current user profile from database
     private func loadCurrentUserProfile() {
         print("AuthService: Loading current user profile")
         guard let modelContext = modelContext else { return }
+        
+        defer {
+            self.isProfileLoaded = true
+        }
 
         // If we have a userID (from Sign in with Apple or previously saved), load by it
         if let userID = userID {
@@ -135,16 +169,18 @@ class AuthService: NSObject, ObservableObject, ASAuthorizationControllerDelegate
             self.userName = fullName
             UserDefaults.standard.set(self.userName, forKey: "appleUserName")
             
-            // Create or update user profile in database
+            // Create or update user profile in database and complete on MainActor
             Task {
                 await createOrUpdateUserProfile(userID: appleIDCredential.user, userName: fullName ?? "Usuário")
+                await MainActor.run {
+                    self.completion?(.success(appleIDCredential))
+                    self.completion = nil
+                }
             }
-            
-            completion?(.success(appleIDCredential))
         } else {
             completion?(.failure(NSError(domain: "AuthService", code: -1, userInfo: [NSLocalizedDescriptionKey: "Credenciais inválidas"])))
+            completion = nil
         }
-        completion = nil
     }
     
     func authorizationController(controller: ASAuthorizationController, didCompleteWithError error: Error) {
@@ -156,6 +192,7 @@ class AuthService: NSObject, ObservableObject, ASAuthorizationControllerDelegate
     
     func logout() {
         print("AuthService: Logging out user")
+        
         // Clear persisted login state
         UserDefaults.standard.set(false, forKey: "isLoggedIn")
         // Clean credentials
@@ -164,11 +201,13 @@ class AuthService: NSObject, ObservableObject, ASAuthorizationControllerDelegate
         self.userID = nil
         self.userName = nil
         self.currentUserProfile = nil
+        self.isProfileLoaded = false
         // Optionally, perform other cleanup
     }
     
     // MARK: - Profile Management
     
+    @MainActor
     private func createOrUpdateUserProfile(userID: String, userName: String) async {
         guard let modelContext = modelContext else { return }
         
@@ -180,12 +219,44 @@ class AuthService: NSObject, ObservableObject, ASAuthorizationControllerDelegate
             predicate: #Predicate { profile in profile.userID == userID }
         )
         
+        // Try to fetch existing user profile from CloudKit first to recover institutionID, profileType, etc.
+        var cloudProfileRecord: CKRecord? = nil
+        let isICloudAvailable = await cloudKitService.isCloudKitAvailable()
+        if isICloudAvailable {
+            do {
+                let predicate = NSPredicate(format: "userID == %@", userID)
+                let records = try await cloudKitService.fetchRecords(ofType: "UserProfile", predicate: predicate, limit: 1)
+                cloudProfileRecord = records.first
+                if cloudProfileRecord != nil {
+                    print("AuthService: Successfully fetched existing user profile from CloudKit")
+                }
+            } catch {
+                print("AuthService: Failed to fetch user profile from CloudKit: \(error.localizedDescription)")
+            }
+        }
+        
         do {
             // Handle private profile
             let privateProfiles = try modelContext.fetch(privateDescriptor)
             
             if let existingProfile = privateProfiles.first {
                 // Update existing private profile
+                if let cloudRecord = cloudProfileRecord {
+                    if let instID = cloudRecord["institutionID"] as? String {
+                        existingProfile.institutionID = instID
+                    }
+                    if let profileType = cloudRecord["profileType"] as? String {
+                        existingProfile.profileType = profileType
+                    }
+                    if let isPublic = cloudRecord["isPublic"] as? Bool {
+                        existingProfile.isPublic = isPublic
+                    }
+                    if let profileImageData = cloudRecord["profileImageData"] as? Data {
+                        existingProfile.profileImageData = profileImageData
+                    }
+                    existingProfile.recordID = cloudRecord.recordID.recordName
+                }
+                
                 existingProfile.userName = userName
                 existingProfile.updatedAt = Date()
                 self.currentUserProfile = existingProfile
@@ -202,10 +273,19 @@ class AuthService: NSObject, ObservableObject, ASAuthorizationControllerDelegate
                     print("AuthService: Successfully updated existing profile in CloudKit")
                 } catch {
                     print("AuthService: Failed to update existing profile in CloudKit: \(error.localizedDescription)")
+                    handleCloudKitError(error)
                 }
             } else {
                 // Create new private profile
-                let newProfile = UserProfile(userID: userID, userName: userName)
+                let newProfile: UserProfile
+                if let cloudRecord = cloudProfileRecord {
+                    newProfile = UserProfile(from: cloudRecord)
+                    // Ensure the userName matches/is updated
+                    newProfile.userName = userName
+                } else {
+                    newProfile = UserProfile(userID: userID, userName: userName)
+                }
+                
                 modelContext.insert(newProfile)
                 self.currentUserProfile = newProfile
                 
@@ -217,6 +297,7 @@ class AuthService: NSObject, ObservableObject, ASAuthorizationControllerDelegate
                     print("AuthService: Successfully created new profile in CloudKit")
                 } catch {
                     print("AuthService: Failed to create new profile in CloudKit: \(error.localizedDescription)")
+                    handleCloudKitError(error)
                 }
             }
             
@@ -241,6 +322,7 @@ class AuthService: NSObject, ObservableObject, ASAuthorizationControllerDelegate
                     print("AuthService: Successfully updated existing public profile in CloudKit")
                 } catch {
                     print("AuthService: Failed to update existing public profile in CloudKit: \(error.localizedDescription)")
+                    handleCloudKitError(error)
                 }
             } else if currentUserProfile?.isPublic == true {
                 // Create new public profile if user wants to be visible
@@ -261,11 +343,13 @@ class AuthService: NSObject, ObservableObject, ASAuthorizationControllerDelegate
                     print("AuthService: Successfully created new public profile in CloudKit")
                 } catch {
                     print("AuthService: Failed to create new public profile in CloudKit: \(error.localizedDescription)")
+                    handleCloudKitError(error)
                 }
             }
             
             try modelContext.save()
             print("AuthService: Successfully saved profile data locally")
+            self.isProfileLoaded = true
         } catch {
             print("Erro ao salvar perfil do usuário: \(error)")
         }
@@ -321,6 +405,7 @@ class AuthService: NSObject, ObservableObject, ASAuthorizationControllerDelegate
                 } catch {
                     print("AuthService: Failed to sync name update to CloudKit: \(error.localizedDescription)")
                     lastError = "Falha ao sincronizar com o iCloud: \(error.localizedDescription)"
+                    handleCloudKitError(error)
                     isUpdating = false
                 }
             }
@@ -377,12 +462,69 @@ class AuthService: NSObject, ObservableObject, ASAuthorizationControllerDelegate
                 } catch {
                     print("AuthService: Failed to sync profile type update to CloudKit: \(error.localizedDescription)")
                     lastError = "Falha ao sincronizar tipo de perfil: \(error.localizedDescription)"
+                    handleCloudKitError(error)
                     isUpdating = false
                 }
             }
         } catch {
             print("Erro ao atualizar tipo de perfil: \(error)")
             lastError = "Erro ao salvar tipo de perfil: \(error.localizedDescription)"
+            isUpdating = false
+        }
+    }
+    
+    func updateInstitutionID(_ institutionID: String?) {
+        print("AuthService: Updating institutionID to \(institutionID ?? "nil")")
+        guard let modelContext = modelContext, let profile = currentUserProfile else { return }
+        
+        // Notify UI immediately before making changes
+        self.objectWillChange.send()
+        
+        isUpdating = true
+        lastError = nil
+        
+        if let id = institutionID {
+            profile.updateProfile(institutionID: id)
+        } else {
+            profile.clearInstitutionID()
+        }
+        
+        // Update public profile if it exists and user is public
+        if let publicProfile = currentPublicProfile, profile.isPublic ?? false {
+            if let id = institutionID {
+                publicProfile.updatePublicProfile(institutionID: id)
+            } else {
+                publicProfile.clearInstitutionID()
+            }
+        }
+        
+        do {
+            try modelContext.save()
+            // Save to CloudKit asynchronously
+            Task { @MainActor in
+                do {
+                    // Save private profile
+                    let record = profile.getRecord()
+                    _ = try await cloudKitService.saveRecord(record)
+                    
+                    // Save public profile if exists
+                    if let publicProfile = currentPublicProfile, profile.isPublic ?? false {
+                        let publicRecord = publicProfile.getRecord()
+                        _ = try await cloudKitService.saveRecord(publicRecord)
+                    }
+                    
+                    print("AuthService: Successfully synced institutionID update to CloudKit")
+                    isUpdating = false
+                } catch {
+                    print("AuthService: Failed to sync institutionID update: \(error.localizedDescription)")
+                    lastError = "Falha ao sincronizar instituição: \(error.localizedDescription)"
+                    handleCloudKitError(error)
+                    isUpdating = false
+                }
+            }
+        } catch {
+            print("Erro ao atualizar instituição: \(error)")
+            lastError = "Erro ao salvar instituição localmente: \(error.localizedDescription)"
             isUpdating = false
         }
     }
@@ -433,6 +575,7 @@ class AuthService: NSObject, ObservableObject, ASAuthorizationControllerDelegate
                 } catch {
                     print("AuthService: Failed to sync profile image update to CloudKit: \(error.localizedDescription)")
                     lastError = "Falha ao sincronizar imagem do perfil: \(error.localizedDescription)"
+                    handleCloudKitError(error)
                     isUpdating = false
                 }
             }
@@ -511,6 +654,7 @@ class AuthService: NSObject, ObservableObject, ASAuthorizationControllerDelegate
                 } catch {
                     print("AuthService: Failed to sync visibility update to CloudKit: \(error.localizedDescription)")
                     lastError = "Falha ao sincronizar visibilidade: \(error.localizedDescription)"
+                    handleCloudKitError(error)
                     isUpdating = false
                 }
             }

@@ -10,7 +10,7 @@ import SwiftData
 
 struct CommunityView: View {
     @Environment(\.modelContext) private var modelContext
-    @StateObject private var authService = AuthService()
+    @EnvironmentObject var authService: AuthService
     @State private var publicProfiles: [PublicProfile] = []
     @State private var categories: [ProfileCategory] = ProfileCategory.allCases
     @State private var selectedCategory: String = "Todos"
@@ -64,7 +64,6 @@ struct CommunityView: View {
             .navigationBarTitleDisplayMode(.automatic)
             .navigationTitle("Comunidade")
             .onAppear {
-                authService.setModelContext(modelContext)
                 loadData()
             }
             .refreshable {
@@ -138,4 +137,5 @@ struct PublicProfileRow: View {
 #Preview {
     CommunityView()
         .modelContainer(for: [PublicProfile.self], inMemory: true)
+        .environmentObject(AuthService())
 }

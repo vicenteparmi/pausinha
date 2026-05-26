@@ -81,18 +81,18 @@ class CloudKitService {
     // Check account status
     func checkAccountStatus() async throws -> Bool {
         let status = try await container.accountStatus()
-        return status == .available
+        return status == .available || status == .temporarilyUnavailable
     }
     
     // Check if CloudKit is properly configured
     func isCloudKitAvailable() async -> Bool {
         do {
             let accountStatus = try await container.accountStatus()
-            if accountStatus != .available {
+            if accountStatus != .available && accountStatus != .temporarilyUnavailable {
                 print("CloudKitService: iCloud account not available: \(accountStatus)")
                 return false
             }
-            print("CloudKitService: iCloud account available")
+            print("CloudKitService: iCloud account available or temporarily unavailable")
             return true
         } catch {
             print("CloudKitService: Error checking iCloud account status: \(error)")
@@ -191,6 +191,26 @@ class CloudKitService {
         }
     }
     
+    // Fetch records by type and predicate
+    func fetchRecords(ofType recordType: String, predicate: NSPredicate, limit: Int = 100) async throws -> [CKRecord] {
+        print("CloudKitService: Fetching records of type \(recordType) with predicate")
+        
+        let query = CKQuery(recordType: recordType, predicate: predicate)
+        
+        do {
+            let result = try await database.records(matching: query, resultsLimit: limit)
+            let records = result.matchResults.compactMap { try? $0.1.get() }
+            print("CloudKitService: Successfully fetched \(records.count) records")
+            return records
+        } catch let error as CKError {
+            print("CloudKitService: CloudKit error fetching records: \(error.localizedDescription)")
+            throw mapCloudKitError(error)
+        } catch {
+            print("CloudKitService: Unexpected error fetching records: \(error.localizedDescription)")
+            throw CloudKitError.fetchFailure(error.localizedDescription)
+        }
+    }
+
     // Fetch all records of a type
     func fetchRecords(ofType recordType: String, limit: Int = 100) async throws -> [CKRecord] {
         print("CloudKitService: Fetching records of type \(recordType)")
